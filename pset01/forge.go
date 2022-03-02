@@ -1,6 +1,10 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
 
 /*
 A note about the provided keys and signatures:
@@ -67,7 +71,7 @@ endian encoding described here.
 // who are less familiar with multithreaded code, the time taken in programming may
 // exceed the CPU time saved.  Still, it's all about learning.
 // The Forge() function doesn't take any inputs; the inputs are all hard-coded into
-// the function which is a little ugly but works OK in this assigment.
+// the function which is a little ugly but works OK in this assignment.
 // The input public key and signatures are provided in the "signatures.go" file and
 // the code to convert those into the appropriate data structures is filled in
 // already.
@@ -119,16 +123,80 @@ func Forge() (string, Signature, error) {
 	fmt.Printf("ok 3: %v\n", Verify(msgslice[2], pub, sig3))
 	fmt.Printf("ok 4: %v\n", Verify(msgslice[3], pub, sig4))
 
-	msgString := "my forged message"
+	msgString := "forge Ziyun Li hi@abc.com"
 	var sig Signature
+	var sec SecretKey
+	// msg := GetMessageFromString(msgString)
+	fixedBits := make(map[int]bool)
 
-	// your code here!
-	// ==
-	// Geordi La
-	// ==
+	for i := 0; i < 256; i++ {
+		foundZeroPreimage, foundOnePreimage := false, false
+		for j, msg := range msgslice {
+			if msg.IsBitSet(i) {
+				sec.OnePre[i] = sigslice[j].Preimage[i]
+				foundOnePreimage = true
+			} else {
+				sec.ZeroPre[i] = sigslice[j].Preimage[i]
+				foundZeroPreimage = true
+			}
+			if foundOnePreimage && foundZeroPreimage {
+				break
+			}
+		}
+		if !foundOnePreimage || !foundZeroPreimage {
+			if foundOnePreimage {
+				fixedBits[i] = true
+			} else {
+				fixedBits[i] = false
+			}
+		}
+	}
+
+	// fmt.Printf("fixed bits: %d\n%v\n", len(fixedBits), fixedBits)
+	// fmt.Printf("Incomplete SecretKey: %v\n", sec.ToHex())
+
+	result := make(chan string)
+
+	for i := 0; i < 8; i++ {
+		go func(count int, out chan string) {
+			suffix := strings.Repeat("*", count)
+			var nonce uint64
+			for {
+				m := msgString + suffix + strconv.FormatUint(nonce, 10)
+				// fmt.Printf("m: %s\n", m)
+				hash := GetMessageFromString(m)
+				mismatched := false
+
+				for k, v := range fixedBits {
+					if hash.IsBitSet(k) != v {
+						mismatched = true
+						break
+					}
+				}
+
+				if !mismatched {
+					fmt.Printf("Found valid hash: %064x\n", hash[:])
+					result <- m
+
+					return
+				}
+				nonce++
+			}
+		}(i, result)
+	}
+
+	msgString = <-result
+	hash := GetMessageFromString(msgString)
+
+	for i := 0; i < 256; i++ {
+		if hash.IsBitSet(i) {
+			sig.Preimage[i] = sec.OnePre[i]
+		} else {
+			sig.Preimage[i] = sec.ZeroPre[i]
+		}
+	}
 
 	return msgString, sig, nil
-
 }
 
 // hint:
